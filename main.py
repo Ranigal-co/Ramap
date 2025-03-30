@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel,
                              QVBoxLayout, QWidget, QPushButton,
-                             QLineEdit, QHBoxLayout)
+                             QLineEdit, QHBoxLayout, QCheckBox)
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QEvent
 import requests
@@ -13,10 +13,11 @@ import json
 
     Запустите main.py
 
-    нажимайте/зажимайте кнопки + -
+    нажимайте/зажимайте кнопки + - (приблизить, отдалить)
     нажимайте/зажимайте кнопки вверх, вниз, влево, вправо
     Переключайте тему кнопкой на окне
     Ищите место в поиске, чтобы сбросить метку, нажмите сбросить
+    Переключайте отображение почтового индекса (не у всех объектов он есть)
 """
 
 
@@ -37,7 +38,9 @@ class MapApp(QMainWindow):
         self.zoom_step = 0.005
         self.theme = "light"
         self.marker = None
-        self.current_address = ""  # Для хранения текущего адреса
+        self.current_address = ""
+        self.postcode = ""  # Для хранения почтового индекса
+        self.show_postcode = False  # Флаг отображения индекса
 
         # Виджеты
         self.map_label = QLabel(self)
@@ -47,6 +50,11 @@ class MapApp(QMainWindow):
         self.address_label = QLabel("Адрес не указан", self)
         self.address_label.setStyleSheet("font-size: 14px; padding: 5px;")
         self.address_label.setAlignment(Qt.AlignCenter)
+
+        # Чекбокс для почтового индекса
+        self.postcode_check = QCheckBox("Показывать почтовый индекс", self)
+        self.postcode_check.setFocusPolicy(Qt.NoFocus)
+        self.postcode_check.stateChanged.connect(self.toggle_postcode)
 
         # Поле поиска и кнопки
         self.search_input = QLineEdit(self)
@@ -74,7 +82,8 @@ class MapApp(QMainWindow):
 
         main_layout = QVBoxLayout()
         main_layout.addLayout(search_layout)
-        main_layout.addWidget(self.address_label)  # Добавляем поле адреса
+        main_layout.addWidget(self.postcode_check)  # Добавляем чекбокс
+        main_layout.addWidget(self.address_label)
         main_layout.addWidget(self.map_label)
         main_layout.addWidget(self.theme_btn)
 
@@ -85,6 +94,22 @@ class MapApp(QMainWindow):
         self.search_input.installEventFilter(self)
         self.setFocus()
         self.load_map()
+
+    def toggle_postcode(self, state):
+        """Переключает отображение почтового индекса"""
+        self.show_postcode = state == Qt.Checked
+        self.update_address_display()
+
+    def update_address_display(self):
+        """Обновляет отображение адреса с учетом почтового индекса"""
+        if not self.current_address:
+            self.address_label.setText("Адрес не указан")
+            return
+
+        if self.show_postcode and self.postcode:
+            self.address_label.setText(f"Найденный адрес: {self.current_address} ({self.postcode})")
+        else:
+            self.address_label.setText(f"Найденный адрес: {self.current_address}")
 
     def eventFilter(self, obj, event):
         """Обработчик событий для возврата фокуса"""
@@ -149,10 +174,16 @@ class MapApp(QMainWindow):
                 self.longitude, self.latitude = map(float, pos.split())
                 self.marker = (self.longitude, self.latitude)
 
-                # Получаем полный адрес из геоданных
-                self.current_address = geo_object["metaDataProperty"]["GeocoderMetaData"]["text"]
-                self.address_label.setText(f"Найденный адрес: {self.current_address}")
+                # Получаем полный адрес и почтовый индекс
+                meta_data = geo_object["metaDataProperty"]["GeocoderMetaData"]
+                self.current_address = meta_data["text"]
 
+                # Извлекаем почтовый индекс, если есть
+                self.postcode = ""
+                if "Address" in meta_data and "postal_code" in meta_data["Address"]:
+                    self.postcode = meta_data["Address"]["postal_code"]
+
+                self.update_address_display()
                 self.zoom = 0.005
                 self.load_map()
             else:
@@ -163,9 +194,10 @@ class MapApp(QMainWindow):
             print(f"Ошибка при поиске: {e}")
 
     def reset_search(self):
-        """Сбрасывает результаты поиска, включая адрес."""
+        """Сбрасывает результаты поиска, включая адрес и индекс."""
         self.marker = None
         self.current_address = ""
+        self.postcode = ""
         self.address_label.setText("Адрес не указан")
         self.load_map()
 
