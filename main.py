@@ -1,4 +1,3 @@
-
 import math
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel,
@@ -15,7 +14,7 @@ import json
 
     Запустите main.py
 
-    нажимайте/зажимайте кнопки + - (приблизить, отдалить)
+    нажимайте/зажимайте кнопки + - (приблизить, отдалить) или колесико мыши
     нажимайте/зажимайте кнопки вверх, вниз, влево, вправо
     Переключайте тему кнопкой на окне
     Ищите место в поиске, чтобы сбросить метку, нажмите сбросить
@@ -97,6 +96,9 @@ class MapApp(QMainWindow):
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
+        self.search_btn.setShortcut("Return")  # Поиск по Enter
+        self.reset_btn.setShortcut("Esc")  # Сброс по Esc
+
         self.search_input.installEventFilter(self)
         self.setFocus()
         self.load_map()
@@ -158,7 +160,7 @@ class MapApp(QMainWindow):
                 f"https://geocode-maps.yandex.ru/1.x/?format=json&apikey={self.apikey_geocoder}"
                 f"&geocode={lon},{lat}&lang=ru_RU&results=1"
             )
-            response = requests.get(geocoder_url)
+            response = requests.get(geocoder_url, timeout=2)
 
             if response.status_code == 200:
                 data = json.loads(response.text)
@@ -236,7 +238,7 @@ class MapApp(QMainWindow):
                 f"https://geocode-maps.yandex.ru/1.x/?format=json&apikey={self.apikey_geocoder}"
                 f"&geocode={lon},{lat}"
             )
-            response = requests.get(geocoder_url)
+            response = requests.get(geocoder_url, timeout=2)
 
             if response.status_code == 200:
                 data = json.loads(response.text)
@@ -334,7 +336,7 @@ class MapApp(QMainWindow):
                 f"https://geocode-maps.yandex.ru/1.x/?format=json&apikey={self.apikey_geocoder}"
                 f"&geocode={query}"
             )
-            response = requests.get(geocoder_url)
+            response = requests.get(geocoder_url, timeout=2)
 
             if response.status_code == 200:
                 data = json.loads(response.text)
@@ -475,6 +477,13 @@ class MapApp(QMainWindow):
                 }
             """)
 
+        self.load_map()
+
+    def wheelEvent(self, event):
+        if event.angleDelta().y() > 0:
+            self.zoom = max(0.0001, self.zoom - self.zoom_step)
+        else:
+            self.zoom = min(50.0, self.zoom + self.zoom_step)
         self.load_map()
 
     def keyPressEvent(self, event):
