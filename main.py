@@ -36,13 +36,19 @@ class MapApp(QMainWindow):
         self.scale = 1.0
         self.zoom_step = 0.005
         self.theme = "light"
-        self.marker = None  # Координаты метки (долгота, широта)
+        self.marker = None
+        self.current_address = ""  # Для хранения текущего адреса
 
         # Виджеты
         self.map_label = QLabel(self)
         self.map_label.setAlignment(Qt.AlignCenter)
 
-        # Поле поиска и кнопка
+        # Поле вывода адреса
+        self.address_label = QLabel("Адрес не указан", self)
+        self.address_label.setStyleSheet("font-size: 14px; padding: 5px;")
+        self.address_label.setAlignment(Qt.AlignCenter)
+
+        # Поле поиска и кнопки
         self.search_input = QLineEdit(self)
         self.search_input.setPlaceholderText("Введите адрес для поиска")
         self.search_input.returnPressed.connect(self.search_location)
@@ -68,6 +74,7 @@ class MapApp(QMainWindow):
 
         main_layout = QVBoxLayout()
         main_layout.addLayout(search_layout)
+        main_layout.addWidget(self.address_label)  # Добавляем поле адреса
         main_layout.addWidget(self.map_label)
         main_layout.addWidget(self.theme_btn)
 
@@ -75,7 +82,6 @@ class MapApp(QMainWindow):
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
-        # Устанавливаем обработчик событий для поля ввода
         self.search_input.installEventFilter(self)
         self.setFocus()
         self.load_map()
@@ -118,13 +124,12 @@ class MapApp(QMainWindow):
             print(f"Ошибка: {e}")
 
     def search_location(self):
-        """Ищет объект по введённому адресу."""
+        """Ищет объект по введённому адресу и отображает его адрес."""
         query = self.search_input.text().strip()
         if not query:
             return
 
         try:
-            # Запрос к геокодеру
             geocoder_url = (
                 f"https://geocode-maps.yandex.ru/1.x/?format=json&apikey={self.apikey_geocoder}"
                 f"&geocode={query}"
@@ -133,20 +138,35 @@ class MapApp(QMainWindow):
 
             if response.status_code == 200:
                 data = json.loads(response.text)
-                # Получаем координаты первого результата
-                pos = data["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]["Point"]["pos"]
+                feature_member = data["response"]["GeoObjectCollection"]["featureMember"]
+
+                if not feature_member:
+                    self.address_label.setText("Ничего не найдено")
+                    return
+
+                geo_object = feature_member[0]["GeoObject"]
+                pos = geo_object["Point"]["pos"]
                 self.longitude, self.latitude = map(float, pos.split())
-                self.marker = (self.longitude, self.latitude)  # Устанавливаем метку
-                self.zoom = 0.005  # Увеличиваем масштаб для найденного объекта
+                self.marker = (self.longitude, self.latitude)
+
+                # Получаем полный адрес из геоданных
+                self.current_address = geo_object["metaDataProperty"]["GeocoderMetaData"]["text"]
+                self.address_label.setText(f"Найденный адрес: {self.current_address}")
+
+                self.zoom = 0.005
                 self.load_map()
             else:
+                self.address_label.setText("Ошибка при поиске")
                 print(f"Ошибка геокодера: {response.status_code}")
         except Exception as e:
+            self.address_label.setText("Ошибка соединения")
             print(f"Ошибка при поиске: {e}")
 
     def reset_search(self):
-        """Сбрасывает результаты поиска."""
+        """Сбрасывает результаты поиска, включая адрес."""
         self.marker = None
+        self.current_address = ""
+        self.address_label.setText("Адрес не указан")
         self.load_map()
 
     def toggle_theme(self):
