@@ -99,31 +99,118 @@ class MapApp(QMainWindow):
         self.load_map()
 
     def map_click_handler(self, event):
-        """Преобразует координаты клика в географические с учетом текущего вида карты"""
+        """Обрабатывает клики по карте"""
         if event.button() == Qt.LeftButton:
-            # Размеры изображения карты (как в API запросе)
-            img_width, img_height = 650, 450
+            # Левый клик - поиск адреса (существующий код)
+            self._handle_left_click(event)
+        elif event.button() == Qt.RightButton:
+            # Правый клик - поиск организаций
+            self._handle_right_click(event)
 
-            # Координаты клика относительно изображения (не виджета!)
-            click_x = event.pos().x() - (self.map_label.width() - img_width) // 2
-            click_y = event.pos().y() - (self.map_label.height() - img_height) // 2
+    def _handle_left_click(self, event):
+        """Обработка левого клика (поиск адреса)"""
+        # Переносим сюда существующий код из map_click_handler
+        img_width, img_height = 650, 450
+        click_x = event.pos().x() - (self.map_label.width() - img_width) // 2
+        click_y = event.pos().y() - (self.map_label.height() - img_height) // 2
 
-            # Проверяем, что клик внутри изображения карты
-            if not (0 <= click_x < img_width and 0 <= click_y < img_height):
-                return
+        if not (0 <= click_x < img_width and 0 <= click_y < img_height):
+            return
 
-            # Получаем границы текущего отображаемого участка карты
-            left, top = self._get_map_bounds()
-            right = left + 2 * self.zoom * (img_width / img_height)
-            bottom = top - 2 * self.zoom
+        left, top = self._get_map_bounds()
+        right = left + 2 * self.zoom * (img_width / img_height)
+        bottom = top - 2 * self.zoom
 
-            # Линейное преобразование координат
-            lon = left + (click_x / img_width) * (right - left)
-            lat = top - (click_y / img_height) * (top - bottom)
-            # Небольшая поправка для широты
+        lon = left + (click_x / img_width) * (right - left)
+        lat = top - (click_y / img_height) * (top - bottom)
 
-            # Ищем объект по координатам
-            self.search_by_coordinates(lon, lat)
+        self.search_by_coordinates(lon, lat)
+
+    def _handle_right_click(self, event):
+        """Обработка правого клика (поиск организаций)"""
+        img_width, img_height = 650, 450
+        click_x = event.pos().x() - (self.map_label.width() - img_width) // 2
+        click_y = event.pos().y() - (self.map_label.height() - img_height) // 2
+
+        if not (0 <= click_x < img_width and 0 <= click_y < img_height):
+            return
+
+        left, top = self._get_map_bounds()
+        right = left + 2 * self.zoom * (img_width / img_height)
+        bottom = top - 2 * self.zoom
+
+        lon = left + (click_x / img_width) * (right - left)
+        lat = top - (click_y / img_height) * (top - bottom)
+
+        self.search_organization(lon, lat)
+
+    def search_organization(self, lon, lat):
+        """Ищет организации в радиусе 50 метров от указанной точки"""
+        # Сбрасываем предыдущие результаты
+        self.reset_search()
+
+        try:
+            # Формируем запрос к геокодеру с параметром kind=org
+            geocoder_url = (
+                f"https://geocode-maps.yandex.ru/1.x/?format=json&apikey={self.apikey_geocoder}"
+                f"&geocode={lon},{lat}&lang=ru_RU&results=1"
+            )
+            response = requests.get(geocoder_url)
+
+            if response.status_code == 200:
+                data = json.loads(response.text)
+                feature_member = data["response"]["GeoObjectCollection"]["featureMember"]
+
+                if not feature_member:
+                    self.address_label.setText("Организации не найдены")
+                    return
+
+                geo_object = feature_member[0]["GeoObject"]
+                pos = geo_object["Point"]["pos"]
+                org_lon, org_lat = map(float, pos.split())
+
+                # Проверяем расстояние до организации (50 метров)
+                if self._calculate_distance(lon, lat, org_lon, org_lat) > 50:
+                    self.address_label.setText("Близлежащие организации не найдены")
+                    return
+
+                # Устанавливаем метку
+                self.marker = (org_lon, org_lat)
+
+                # Получаем название и адрес организации
+                meta_data = geo_object["metaDataProperty"]["GeocoderMetaData"]
+                org_name = meta_data["name"] if "name" in meta_data else "Организация"
+                address = meta_data["text"]
+
+                self.current_address = f"{org_name}, {address}"
+                self.postcode = ""
+                if "Address" in meta_data and "postal_code" in meta_data["Address"]:
+                    self.postcode = meta_data["Address"]["postal_code"]
+
+                self.update_address_display()
+                self.load_map()
+
+            else:
+                self.address_label.setText("Ошибка при поиске организаций")
+                print(f"Ошибка геокодера: {response.status_code}")
+        except Exception as e:
+            self.address_label.setText("Ошибка соединения")
+            print(f"Ошибка при поиске организаций: {e}")
+
+    def _calculate_distance(self, lon1, lat1, lon2, lat2):
+        """Вычисляет расстояние между точками в метрах (формула гаверсинусов)"""
+        R = 6371000  # Радиус Земли в метрах
+        lat1_rad = math.radians(lat1)
+        lat2_rad = math.radians(lat2)
+        delta_lat = math.radians(lat2 - lat1)
+        delta_lon = math.radians(lon2 - lon1)
+
+        a = (math.sin(delta_lat / 2) * math.sin(delta_lat / 2) +
+             math.cos(lat1_rad) * math.cos(lat2_rad) *
+             math.sin(delta_lon / 2) * math.sin(delta_lon / 2))
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+        return R * c
 
     def _get_map_bounds(self):
         """Возвращает координаты левого верхнего угла текущего вида карты"""
