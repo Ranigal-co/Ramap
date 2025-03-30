@@ -1,3 +1,4 @@
+import math
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel,
                              QVBoxLayout, QWidget, QPushButton,
@@ -45,6 +46,8 @@ class MapApp(QMainWindow):
         # Виджеты
         self.map_label = QLabel(self)
         self.map_label.setAlignment(Qt.AlignCenter)
+        self.map_label.setCursor(Qt.CrossCursor)  # Изменяем курсор при наведении
+        self.map_label.mousePressEvent = self.map_click_handler  # Обработчик кликов
 
         # Поле вывода адреса
         self.address_label = QLabel("Адрес не указан", self)
@@ -94,6 +97,88 @@ class MapApp(QMainWindow):
         self.search_input.installEventFilter(self)
         self.setFocus()
         self.load_map()
+
+    def map_click_handler(self, event):
+        """Преобразует координаты клика в географические с учетом текущего вида карты"""
+        if event.button() == Qt.LeftButton:
+            # Размеры изображения карты (как в API запросе)
+            img_width, img_height = 650, 450
+
+            # Координаты клика относительно изображения (не виджета!)
+            click_x = event.pos().x() - (self.map_label.width() - img_width) // 2
+            click_y = event.pos().y() - (self.map_label.height() - img_height) // 2
+
+            # Проверяем, что клик внутри изображения карты
+            if not (0 <= click_x < img_width and 0 <= click_y < img_height):
+                return
+
+            # Получаем границы текущего отображаемого участка карты
+            left, top = self._get_map_bounds()
+            right = left + 2 * self.zoom * (img_width / img_height)
+            bottom = top - 2 * self.zoom
+
+            # Линейное преобразование координат
+            lon = left + (click_x / img_width) * (right - left)
+            lat = top - (click_y / img_height) * (top - bottom)
+            # Небольшая поправка для широты
+
+            # Ищем объект по координатам
+            self.search_by_coordinates(lon, lat)
+
+    def _get_map_bounds(self):
+        """Возвращает координаты левого верхнего угла текущего вида карты"""
+        # Соотношение сторон карты
+        aspect_ratio = 650 / 450
+
+        # Рассчитываем границы
+        left = self.longitude - self.zoom * aspect_ratio
+        top = self.latitude + self.zoom
+        return left, top
+
+    def search_by_coordinates(self, lon, lat):
+        """Ищет объект по координатам и обновляет интерфейс"""
+        # Сбрасываем предыдущие результаты
+        self.reset_search()
+
+        try:
+            # Формируем запрос к геокодеру
+            geocoder_url = (
+                f"https://geocode-maps.yandex.ru/1.x/?format=json&apikey={self.apikey_geocoder}"
+                f"&geocode={lon},{lat}"
+            )
+            response = requests.get(geocoder_url)
+
+            if response.status_code == 200:
+                data = json.loads(response.text)
+                feature_member = data["response"]["GeoObjectCollection"]["featureMember"]
+
+                if not feature_member:
+                    self.address_label.setText("Ничего не найдено по этим координатам")
+                    return
+
+                geo_object = feature_member[0]["GeoObject"]
+                pos = geo_object["Point"]["pos"]
+                found_lon, found_lat = map(float, pos.split())
+
+                # Устанавливаем метку (но не меняем центр карты)
+                self.marker = (found_lon, found_lat)
+
+                # Получаем адрес и почтовый индекс
+                meta_data = geo_object["metaDataProperty"]["GeocoderMetaData"]
+                self.current_address = meta_data["text"]
+                self.postcode = ""
+                if "Address" in meta_data and "postal_code" in meta_data["Address"]:
+                    self.postcode = meta_data["Address"]["postal_code"]
+
+                self.update_address_display()
+                self.load_map()  # Перезагружаем карту с новой меткой
+
+            else:
+                self.address_label.setText("Ошибка при поиске по координатам")
+                print(f"Ошибка геокодера: {response.status_code}")
+        except Exception as e:
+            self.address_label.setText("Ошибка соединения")
+            print(f"Ошибка при поиске по координатам: {e}")
 
     def toggle_postcode(self, state):
         """Переключает отображение почтового индекса"""
