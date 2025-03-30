@@ -1,9 +1,12 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel,
-                             QVBoxLayout, QWidget, QPushButton)
+                             QVBoxLayout, QWidget, QPushButton,
+                             QLineEdit, QHBoxLayout)
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QEvent
 import requests
+import json
+
 
 """
     установите библиотеки
@@ -13,6 +16,7 @@ import requests
     нажимайте/зажимайте кнопки + -
     нажимайте/зажимайте кнопки вверх, вниз, влево, вправо
     Переключайте тему кнопкой на окне
+    Ищите место в поиске, чтобы сбросить метку, нажмите сбросить
 """
 
 
@@ -23,6 +27,7 @@ class MapApp(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
 
         self.apikey_static_map = "cd4da668-3cdc-44f9-8bf1-e280e40b2055"
+        self.apikey_geocoder = "03c33d0f-cfbf-4dd6-aeb7-993c8e001017"
 
         # Параметры карты
         self.latitude = 55.757718
@@ -31,32 +36,56 @@ class MapApp(QMainWindow):
         self.scale = 1.0
         self.zoom_step = 0.005
         self.theme = "light"
+        self.marker = None  # Координаты метки (долгота, широта)
 
         # Виджеты
         self.map_label = QLabel(self)
         self.map_label.setAlignment(Qt.AlignCenter)
 
+        # Поле поиска и кнопка
+        self.search_input = QLineEdit(self)
+        self.search_input.setPlaceholderText("Введите адрес для поиска")
+        self.search_input.returnPressed.connect(self.search_location)
+
+        self.search_btn = QPushButton("Искать", self)
+        self.search_btn.setFocusPolicy(Qt.NoFocus)
+        self.search_btn.clicked.connect(self.search_location)
+
+        self.reset_btn = QPushButton("Сбросить", self)
+        self.reset_btn.setFocusPolicy(Qt.NoFocus)
+        self.reset_btn.clicked.connect(self.reset_search)
+
         # Кнопка переключения темы
         self.theme_btn = QPushButton("Тёмная тема", self)
-        self.theme_btn.setFocusPolicy(Qt.NoFocus)  # Важное изменение!
+        self.theme_btn.setFocusPolicy(Qt.NoFocus)
         self.theme_btn.clicked.connect(self.toggle_theme)
-        self.theme_btn.installEventFilter(self)
 
         # Layout
-        layout = QVBoxLayout()
-        layout.addWidget(self.map_label)
-        layout.addWidget(self.theme_btn)
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.search_btn)
+        search_layout.addWidget(self.reset_btn)
+
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(search_layout)
+        main_layout.addWidget(self.map_label)
+        main_layout.addWidget(self.theme_btn)
+
         container = QWidget()
-        container.setLayout(layout)
+        container.setLayout(main_layout)
         self.setCentralWidget(container)
 
-        self.setFocus()  # Устанавливаем фокус на окно
+        # Устанавливаем обработчик событий для поля ввода
+        self.search_input.installEventFilter(self)
+        self.setFocus()
         self.load_map()
 
-    def focusOutEvent(self, event):
-        """Автоматически возвращаем фокус при его потере"""
-        self.setFocus()
-        super().focusOutEvent(event)
+    def eventFilter(self, obj, event):
+        """Обработчик событий для возврата фокуса"""
+        if event.type() == QEvent.FocusOut and obj is self.search_input:
+            self.setFocus()
+            return True
+        return super().eventFilter(obj, event)
 
     def load_map(self):
         """Загружает карту с текущими параметрами."""
@@ -69,6 +98,11 @@ class MapApp(QMainWindow):
             "theme": f"&theme={self.theme}",
             "api_key": f"&apikey={self.apikey_static_map}",
         }
+
+        # Добавляем метку, если она есть
+        if self.marker:
+            map_dict["marker"] = f"&pt={self.marker[0]},{self.marker[1]},pm2rdl"  # Красная метка
+
         map_url = "".join(map_dict.values())
 
         try:
@@ -77,10 +111,43 @@ class MapApp(QMainWindow):
                 pixmap = QPixmap()
                 pixmap.loadFromData(response.content)
                 self.map_label.setPixmap(pixmap)
+                self.setFocus()  # Возвращаем фокус после загрузки карты
             else:
                 print(f"Ошибка: {response.status_code}")
         except Exception as e:
             print(f"Ошибка: {e}")
+
+    def search_location(self):
+        """Ищет объект по введённому адресу."""
+        query = self.search_input.text().strip()
+        if not query:
+            return
+
+        try:
+            # Запрос к геокодеру
+            geocoder_url = (
+                f"https://geocode-maps.yandex.ru/1.x/?format=json&apikey={self.apikey_geocoder}"
+                f"&geocode={query}"
+            )
+            response = requests.get(geocoder_url)
+
+            if response.status_code == 200:
+                data = json.loads(response.text)
+                # Получаем координаты первого результата
+                pos = data["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]["Point"]["pos"]
+                self.longitude, self.latitude = map(float, pos.split())
+                self.marker = (self.longitude, self.latitude)  # Устанавливаем метку
+                self.zoom = 0.005  # Увеличиваем масштаб для найденного объекта
+                self.load_map()
+            else:
+                print(f"Ошибка геокодера: {response.status_code}")
+        except Exception as e:
+            print(f"Ошибка при поиске: {e}")
+
+    def reset_search(self):
+        """Сбрасывает результаты поиска."""
+        self.marker = None
+        self.load_map()
 
     def toggle_theme(self):
         """Переключает тему между light и dark."""
@@ -108,12 +175,6 @@ class MapApp(QMainWindow):
         elif event.key() == Qt.Key_Right:
             self.longitude += self.zoom_step
             self.load_map()
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.KeyPress:
-            self.keyPressEvent(event)
-            return True
-        return super().eventFilter(obj, event)
 
 
 if __name__ == "__main__":
