@@ -88,7 +88,7 @@ class MapApp(QMainWindow):
         return super().eventFilter(obj, event)
 
     def load_map(self):
-        """Загружает карту с текущими параметрами."""
+        """Загружает карту с текущими параметрами и сохраняет метку."""
         map_dict = {
             "address": "https://static-maps.yandex.ru/v1?lang=ru_RU&",
             "coordinates": f"&ll={self.longitude},{self.latitude}",
@@ -99,9 +99,9 @@ class MapApp(QMainWindow):
             "api_key": f"&apikey={self.apikey_static_map}",
         }
 
-        # Добавляем метку, если она есть
+        # Метка сохраняется при любых изменениях карты
         if self.marker:
-            map_dict["marker"] = f"&pt={self.marker[0]},{self.marker[1]},pm2rdl"  # Красная метка
+            map_dict["marker"] = f"&pt={self.marker[0]},{self.marker[1]},pm2rdl"
 
         map_url = "".join(map_dict.values())
 
@@ -150,16 +150,16 @@ class MapApp(QMainWindow):
         self.load_map()
 
     def toggle_theme(self):
-        """Переключает тему между light и dark."""
+        """Переключает тему с сохранением метки."""
         self.theme = "dark" if self.theme == "light" else "light"
         self.theme_btn.setText("Светлая тема" if self.theme == "dark" else "Тёмная тема")
-        self.load_map()
+        self.load_map()  # Метка сохранится при переключении темы
 
     def keyPressEvent(self, event):
-        """Обрабатывает нажатия клавиш."""
+        """Обрабатывает нажатия клавиш с сохранением метки."""
         if event.key() == Qt.Key_Plus or event.key() == Qt.Key_Equal:
             self.zoom = max(0.0001, self.zoom - self.zoom_step)
-            self.load_map()
+            self.load_map()  # Метка сохранится автоматически в load_map
         elif event.key() == Qt.Key_Minus:
             self.zoom = min(50.0, self.zoom + self.zoom_step)
             self.load_map()
