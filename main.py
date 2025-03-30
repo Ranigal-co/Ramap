@@ -1,9 +1,10 @@
+
 import math
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel,
                              QVBoxLayout, QWidget, QPushButton,
                              QLineEdit, QHBoxLayout, QCheckBox)
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtCore import Qt, QEvent
 import requests
 import json
@@ -19,6 +20,8 @@ import json
     Переключайте тему кнопкой на окне
     Ищите место в поиске, чтобы сбросить метку, нажмите сбросить
     Переключайте отображение почтового индекса (не у всех объектов он есть)
+    кликайте левой кнопкой мыши чтобы определить адрес места
+    кликайте правой кнопкой мыши чтобы определить ближайшую организацию в радиусе 50 метров
 """
 
 
@@ -374,10 +377,105 @@ class MapApp(QMainWindow):
         self.load_map()
 
     def toggle_theme(self):
-        """Переключает тему с сохранением метки."""
+        """Переключает тему карты и всего приложения с кастомными стилями"""
+        # Переключаем тему карты
         self.theme = "dark" if self.theme == "light" else "light"
         self.theme_btn.setText("Светлая тема" if self.theme == "dark" else "Тёмная тема")
-        self.load_map()  # Метка сохранится при переключении темы
+
+        app = QApplication.instance()
+
+        if self.theme == "dark":
+            # Тёмная тема
+            dark_palette = app.palette()
+            # Основные цвета
+            dark_palette.setColor(dark_palette.Window, QColor(53, 53, 53))
+            dark_palette.setColor(dark_palette.WindowText, Qt.white)
+            dark_palette.setColor(dark_palette.Base, QColor(35, 35, 35))
+            dark_palette.setColor(dark_palette.AlternateBase, QColor(53, 53, 53))
+            dark_palette.setColor(dark_palette.Text, Qt.white)
+            dark_palette.setColor(dark_palette.Button, QColor(53, 53, 53))
+            dark_palette.setColor(dark_palette.ButtonText, Qt.white)
+            # Акцентные цвета
+            dark_palette.setColor(dark_palette.Highlight, QColor(42, 130, 218))
+            dark_palette.setColor(dark_palette.HighlightedText, Qt.white)
+            app.setPalette(dark_palette)
+
+            # Дополнительные стили для тёмной темы
+            self.setStyleSheet("""
+                QMainWindow {
+                    background-color: #353535;
+                }
+                QLabel, QCheckBox {
+                    color: white;
+                }
+                QLineEdit {
+                    background: #353535;
+                    color: white;
+                    border: 1px solid #555;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+                QPushButton {
+                    background: #454545;
+                    color: white;
+                    border: 1px solid #555;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background: #555;
+                }
+                QPushButton:pressed {
+                    background: #656565;
+                }
+            """)
+        else:
+            # Светлая тема (кастомная)
+            light_palette = app.palette()
+            # Основные цвета
+            light_palette.setColor(light_palette.Window, QColor(240, 240, 240))
+            light_palette.setColor(light_palette.WindowText, Qt.black)
+            light_palette.setColor(light_palette.Base, Qt.white)
+            light_palette.setColor(light_palette.AlternateBase, QColor(240, 240, 240))
+            light_palette.setColor(light_palette.Text, Qt.black)
+            light_palette.setColor(light_palette.Button, QColor(240, 240, 240))
+            light_palette.setColor(light_palette.ButtonText, Qt.black)
+            # Акцентные цвета
+            light_palette.setColor(light_palette.Highlight, QColor(100, 150, 220))
+            light_palette.setColor(light_palette.HighlightedText, Qt.white)
+            app.setPalette(light_palette)
+
+            # Дополнительные стили для светлой темы
+            self.setStyleSheet("""
+                QMainWindow {
+                    background-color: #f0f0f0;
+                }
+                QLabel, QCheckBox {
+                    color: black;
+                }
+                QLineEdit {
+                    background: white;
+                    color: black;
+                    border: 1px solid #ccc;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+                QPushButton {
+                    background: #f5f5f5;
+                    color: black;
+                    border: 1px solid #ccc;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background: #e5e5e5;
+                }
+                QPushButton:pressed {
+                    background: #d5d5d5;
+                }
+            """)
+
+        self.load_map()
 
     def keyPressEvent(self, event):
         """Обрабатывает нажатия клавиш с сохранением метки."""
